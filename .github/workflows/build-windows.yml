@@ -1,0 +1,55 @@
+name: Build SoloCast Clean for OBS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Check out SoloCast Clean
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - name: Check out official OBS plugin template
+        uses: actions/checkout@v4
+        with:
+          repository: obsproject/obs-plugintemplate
+          ref: master
+          path: template
+
+      - name: Overlay SoloCast Clean sources
+        shell: pwsh
+        run: |
+          Copy-Item plugin/CMakeLists.txt template/CMakeLists.txt -Force
+          Copy-Item plugin/buildspec.json template/buildspec.json -Force
+          Remove-Item template/src/* -Recurse -Force
+          Copy-Item plugin/src/* template/src/ -Recurse -Force
+
+      - name: Build Windows x64 plugin
+        shell: pwsh
+        working-directory: template
+        run: .github/scripts/Build-Windows.ps1 -Target x64 -Configuration Release
+
+      - name: Collect DLL
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifact/obs-plugins/64bit | Out-Null
+          $dll = Get-ChildItem template/build_x64 -Recurse -Filter solocast-clean.dll | Select-Object -First 1
+          if (-not $dll) { throw 'solocast-clean.dll was not produced' }
+          Copy-Item $dll.FullName artifact/obs-plugins/64bit/solocast-clean.dll
+          Copy-Item plugin/README.md artifact/README.md
+
+      - name: Upload Windows plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: solocast-clean-0.2.0-windows-x64
+          path: artifact
+          if-no-files-found: error
+
